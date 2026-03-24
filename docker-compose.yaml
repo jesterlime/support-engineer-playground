@@ -1,0 +1,79 @@
+services:
+  db:
+    image: postgres:16
+    container_name: pay_db
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: gateway_user
+      POSTGRES_PASSWORD: gateway_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway_user -d payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  bank:
+    build: ./mock-bank
+    container_name: mock_bank
+    environment:
+      API_KEY: PROCESSOR-BANK-SECRET
+    volumes:
+      - ./mock-bank/app:/app
+    ports:
+      - "8001:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  webhook-sink:
+    build: ./webhook-sink
+    container_name: webhook-sink
+    volumes:
+      - ./webhook-sink/app:/app
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    command: uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+  
+  gateway:
+    build: ./gateway
+    container_name: pay_gateway
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: payments
+      DB_USER: gateway_user
+      DB_PASSWORD: gateway_pass
+    volumes:
+      - ./gateway/app:/app
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  processor:
+    build: ./processor
+    container_name: pay_processor
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: payments
+      DB_USER: processor_user
+      DB_PASSWORD: processor_pass
+      BANK_HOST: bank
+      BANK_PORT: 8000
+      BANK_AUTH: PROCESSOR-BANK-SECRET
+    volumes:
+      - ./processor/app:/app
+      - ./logs:/app/logs
+    command: python main.py
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
