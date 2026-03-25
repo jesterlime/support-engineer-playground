@@ -1,4 +1,4 @@
-# Tciket 002 - Resource Exhaustion
+# Ticket 002 - Resource Exhaustion
 
 This investigation documents the decision chain used to resolve a Technical Support case, demonstrating proficiency in architectural troubleshooting, bottleneck identification, and system-wide resource analysis. Unlike a crash, this incident explores head-of-line blocking (HOL blocking), where a single high-latency downstream merchant causes systemic congestion and a total delivery backlog for all other users. Entry point of investigation - the internal ticked, escalated from Tier 1 team.
 
