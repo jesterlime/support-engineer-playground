@@ -1,21 +1,22 @@
 services:
-  db:
-    image: postgres:16
-    container_name: pay_db
-    environment:
-      POSTGRES_DB: payments
-      POSTGRES_USER: gateway_user
-      POSTGRES_PASSWORD: gateway_pass
+
+  # =========== DMZ / Public Subnet ===========
+
+  reverse-proxy:
+    image: caddy:latest
     ports:
-      - "5432:5432"
+      - "80:80"
+      - "443:443"
+    networks:
+      - public
+      - private
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gateway_user -d payments"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      - ./Caddyfile:/etc/caddy/Caddyfile
+
+  db-admin:
+    image: adminer:latest
+    networks:
+      - private
 
   bank:
     build: ./mock-bank
@@ -27,6 +28,8 @@ services:
     ports:
       - "8001:8000"
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - public
 
   webhook-sink:
     build: ./webhook-sink
@@ -37,6 +40,28 @@ services:
     ports:
       - "8080:8080"
     command: uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+    networks:
+      - public
+
+  # =========== Private Subnet ===========
+
+  db:
+    image: postgres:16
+    container_name: pay_db
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: gateway_user
+      POSTGRES_PASSWORD: gateway_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway_user -d payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - private
   
   gateway:
     build: ./gateway
@@ -50,11 +75,11 @@ services:
     volumes:
       - ./gateway/app:/app
       - ./logs:/app/logs
-    ports:
-      - "8000:8000"
     depends_on:
       - db
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - private
 
   processor:
     build: ./processor
@@ -65,7 +90,7 @@ services:
       DB_NAME: payments
       DB_USER: processor_user
       DB_PASSWORD: processor_pass
-      BANK_HOST: bank
+      BANK_HOST: reverse-proxy/bank
       BANK_PORT: 8000
       BANK_AUTH: PROCESSOR-BANK-SECRET
     volumes:
@@ -74,6 +99,16 @@ services:
     command: python main.py
     depends_on:
       - db
+    networks:
+      - private
 
 volumes:
   pgdata:
+
+networks:
+  public:
+    driver: bridge
+
+  private:
+    internal: true
+    driver: bridge

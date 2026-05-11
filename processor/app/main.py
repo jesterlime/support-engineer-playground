@@ -267,7 +267,7 @@ def get_db():
     finally: db.close()
 
 async def main():
-    processor_instance = PaymentProcessor(get_db, f"http://{BANK_HOST}:{BANK_PORT}")
+    processor_instance = PaymentProcessor(get_db, f"http://{BANK_HOST}")
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
 

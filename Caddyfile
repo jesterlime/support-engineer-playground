@@ -1,0 +1,23 @@
+{
+    auto_https off
+}
+
+# Inbound
+api.payment-gateway.local:80 {
+    reverse_proxy gateway:8000
+}
+
+admin.payment-gateway.local:80 {
+    reverse_proxy db-admin:8080
+}
+
+# Oubound
+reverse-proxy:80 {
+    handle_path /webhook* {
+        reverse_proxy webhook-sink:8080
+    }
+
+    handle_path /bank* {
+        reverse_proxy bank:8000
+    }
+}
