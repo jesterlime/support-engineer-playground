@@ -23,22 +23,16 @@ def create_payment(db_session: Session, payment_data, corr_id):
             }
         )
     except Exception as e:
-        logger.error("database_read_failed", extra={
+        logger.error("Failed to read database", extra={
+            "correlation_id": payment_id,
             "correlation_id": correlation_id,
-            "event": "create_payment",
-            "error_detail": str(e),
+            "error_detail": str(e)[:200],
         })
         raise
 
     res = res.first()
     if res is not None:
-        logger.warning("idempotency_hit", extra={
-            "correlation_id": str(res[1]),
-            "event": "create_payment",
-            "payment_id": str(res[0])
-        })
-        return str(res[0]), str(res[1])
-
+        return True, str(res[0]), str(res[1])
 
     # Insert new payment to 'payments' and 'payment-events' in one transction
     try:
@@ -80,20 +74,19 @@ def create_payment(db_session: Session, payment_data, corr_id):
 
         db_session.commit()
 
-        logger.info("payment_record_created", extra={
-            "correlation_id": correlation_id,
+        logger.info("Payment record created", extra={
             "payment_id": payment_id,
-            "event": "create_payment"
+            "correlation_id": correlation_id
         })
     except Exception as e:
         db_session.rollback()
-        logger.error("database_transaction_failed", extra={
+        logger.error("Database transaction failed", extra={
+            "payment_id": payment_id,
             "correlation_id": correlation_id,
-            "error_detail": str(e),
-            "event": "create_payment"
+            "error_detail": str(e)
         })
     
-    return payment_id, correlation_id
+    return False, payment_id, correlation_id
 
 def check_payment(db_session: Session, payment_data, corr_id):
     try:
@@ -114,19 +107,14 @@ def check_payment(db_session: Session, payment_data, corr_id):
             }
         )
     except Exception as e:
-        logger.error("database_read_failed", extra={
+        logger.error("Failed to read database", extra={
             "correlation_id": corr_id,
-            "event": "check_payment",
-            "error_detail": str(e),
+            "error_detail": str(e)[:200],
         })
         raise
 
     res = res.first()
     if res is None:
-            logger.warning("payment_not_found", extra={
-                "correlation_id": corr_id,
-                "event": "check_payment"
-            })
             raise NotFoundError()
     return res
 
@@ -155,10 +143,9 @@ def get_report(db_session: Session, report_request, corr_id):
             }
         )
     except Exception as e:
-        logger.error("database_read_failed", extra={
+        logger.error("Failed to read database", extra={
             "correlation_id": corr_id,
-            "event": "check_payment",
-            "error_detail": str(e),
+            "error_detail": str(e)[:200],
         })
         raise
     return res

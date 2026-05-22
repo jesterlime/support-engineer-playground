@@ -7,19 +7,18 @@ from config import MQ_HOST, MQ_PASSWORD, MQ_USER
 from db import DATABASE_URL
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 import json
-from crud import ( fetch_created_payment, add_payment_event )
+from crud import ( fetch_payment, add_webhook_attempt, update_webhook_attempt )
 from logger_setup import logger
-from bank_service import authorize_payment
+from webhook_service import send_webhook
 
 RABBITMQ_URL = f"amqp://{MQ_USER}:{MQ_PASSWORD}@{MQ_HOST}/"
-QUEUE_NAME = "processor"
-NOTIFICATION_QUEUE = "notifications"
+QUEUE_NAME = "notifications"
 
 async def main():
-    logger.info("Processor is starting up")
+    logger.info("Notification service is starting up")
+
     mq = RabbitMQManager(RABBITMQ_URL, QUEUE_NAME)
     await mq.connect()
-    await mq.declare_queue(NOTIFICATION_QUEUE)
     logger.info("RabbitMQ connection created")
 
     http_client = httpx.AsyncClient(timeout=30.0)
@@ -33,45 +32,32 @@ async def main():
     AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
     logger.info("PostgreSQL connection created")
 
-    logger.info("Processor is ready for new messages...")
+    logger.info("Notification service is ready for new messages...")
 
     stop_event = asyncio.Event()
 
     async def process_message(payment_id, correlation_id, message_id):
-        logger.info("Payment message consumed", extra={
-            "mq_message_id": message_id, 
-            "payment_id": payment_id, 
-            "correlation_id": correlation_id
-            })
+        logger.info("Notification message consumed", extra={"mq_message_id": message_id, "payment_id": payment_id, "correlation_id": correlation_id})
 
-        # Fetch payment from database and update status to "processing"
-        # Add record to `payment_events` table
+        # Business logic
+        # Get payment from database
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                payment = await fetch_created_payment(session, payment_id, correlation_id)
-                if payment:
-                    await add_payment_event(session, payment, "processing", correlation_id)
+                payment = await fetch_payment(session, payment_id, correlation_id)
 
-        # Send request to bank
-        # Update record to completed/failed in `payments` table
-        # Add record to `payment_events` table
+        # Add webhook attempt
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                logger.info("Authorizing the payment", extra={
-                    "payment_id": payment_id, 
-                    "correlation_id": correlation_id
-                    })
-                await authorize_payment(session, http_client, payment)
+                await add_webhook_attempt(session, payment)
+
+        # Send reuqest
+        status_code, body = await send_webhook(http_client, payment, payment_id, correlation_id)
+
+        # Update webhook attempt
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await update_webhook_attempt(session, payment_id, correlation_id, status_code, body)
         
-        # Post a job for notification service
-        await mq.publish(NOTIFICATION_QUEUE, {
-            "payment_id": payment_id,
-            "correlation_id": correlation_id
-        })
-        logger.info("Work published to notification queue", extra={
-            "payment_id": payment_id, 
-            "correlation_id": correlation_id
-            })
 
     async def on_message(message: aio_pika.IncomingMessage):
         message_body = json.loads(message.body.decode())
@@ -102,7 +88,6 @@ async def main():
                 "error_msg":str(e)[:200]})
             await message.nack(requeue=False)
 
-
     def ask_exit():
         logger.info("Shutdown signal received...")
         stop_event.set()
@@ -129,7 +114,7 @@ async def main():
     await mq.close()
     logger.info("RabbitMQ connection closed")
 
-    logger.info("Processor shut down cleanly...")
+    logger.info("Notification service shut down cleanly...")
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,11 +1,12 @@
 import logging
 import json
 import datetime
-import logging
+import os, logging
+from logging.handlers import RotatingFileHandler
 import sys
 
 class MyJSONFormatter(logging.Formatter):
-    # standard LogRecord attributes to ignore
+    # Set of standard LogRecord attributes to ignore
     RESERVED_ATTRS = {
         "args",
         "asctime",
@@ -42,6 +43,7 @@ class MyJSONFormatter(logging.Formatter):
             "function": record.funcName,
         }
 
+        # Dynamically add any custom attribute passed via extra={}
         for key, value in record.__dict__.items():
             if key not in self.RESERVED_ATTRS:
                 log_record[key] = value

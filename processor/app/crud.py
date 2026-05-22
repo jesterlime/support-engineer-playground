@@ -2,34 +2,30 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from logger_setup import logger
 
-def fetch_created_payment(db_session: Session):
+async def fetch_created_payment(db_session: Session, payment_id, correlation_id):
     try:
-        res = db_session.execute(text(
+        res = await db_session.execute(text(
             """
             UPDATE payments 
             SET status = 'processing', updated_at = NOW()
-            WHERE id = (
-                SELECT id FROM payments 
-                WHERE status = 'created' 
-                ORDER BY created_at ASC 
-                FOR UPDATE SKIP LOCKED 
-                LIMIT 1
-            )
+            WHERE id = :payment_id
             RETURNING *;
-            """)
-        ).first()
+            """),
+            {"payment_id": payment_id}
+        )
+        res = res.first()
         if res:
-            logger.info("[CRUD] fetch_created_payment", extra={"correlation_id":str(res.correlation_id)})
+            logger.info("Payment fetched", extra={"payment_id": str(res.id), "correlation_id":correlation_id})
         else:
-            logger.info("[CRUD] fetch_created_payment")
+            logger.warning("Payment ID not found", extra={"payment_id":payment_id, "correlation_id":correlation_id})
         return res
     except Exception as e:
-        logger.error("Error happened when trying to fetch_created_payment", extra={"error_detail":str(e)})
+        logger.error("Error when fetching payment", extra={"payment_id": payment_id, "correlation_id":correlation_id, "error_detail":str(e)})
         raise
 
-def update_payment_status(db_session: Session, payment_id, status, bank_txn_id = None):
+async def update_payment_status(db_session: Session, payment_id, corelation_id, status, bank_txn_id = None):
     try:
-        db_session.execute(text(
+        await db_session.execute(text(
             """
             UPDATE payments 
             SET status = :new_status, updated_at = NOW(), bank_txn_id = :bank_txn_id
@@ -42,17 +38,18 @@ def update_payment_status(db_session: Session, payment_id, status, bank_txn_id =
             """),
             {"new_status": status, "payment_id": payment_id, "bank_txn_id": bank_txn_id}
         )
-        logger.info("[CRUD] update_payment_status", extra={"payment_id":str(payment_id)})
+        logger.info("Payment status updated", extra={"new_status":status, "payment_id":str(payment_id), "correlation_id":str(corelation_id)})
     except Exception as e:
-        logger.error("Error happened when trying to update_payment_status", extra={
+        logger.error("Error when updating payment status", extra={
             "payment_id": payment_id,
+            "corelation_id":corelation_id,
             "error_detail":str(e)
         })
         raise
 
-def add_payment_event(db_session: Session, payment_id, new_status, reason = None):
+async def add_payment_event(db_session: Session, payment, new_status, correlation_id, reason = None):
     try:
-        db_session.execute(text(
+        await db_session.execute(text(
             """
             INSERT INTO payment_events(payment_id, from_status, to_status, reason, actor)
             SELECT 
@@ -66,52 +63,13 @@ def add_payment_event(db_session: Session, payment_id, new_status, reason = None
             ORDER BY created_at DESC
             LIMIT 1;
             """),
-            {"payment_id": payment_id, "new_status": new_status, "reason": reason}
+            {"payment_id": payment.id, "new_status": new_status, "reason": reason}
         )
-        logger.info("[CRUD] add_payment_event", extra={"payment_id":str(payment_id)})
+        logger.info("Payment event added", extra={"new_status":new_status, "payment_id":str(payment.id), "correlation_id":correlation_id})
     except Exception as e:
-        logger.error("Error happened when trying to add_payment_event", extra={
-            "payment_id": payment_id,
-            "error_detail":str(e)
-        })
-        raise
-    
-def add_webhook_attempt(db_session: Session, payment):
-    try:
-        db_session.execute(text(
-            """
-            INSERT INTO webhook_deliveries (payment_id, attempt_no, target_url, delivered_at)
-            VALUES (:payment_id, '0', :target_url, NOW())
-            """),
-            {"payment_id": str(payment.id), "target_url": payment.webhook_url}
-        )
-        logger.info("[CRUD] add_webhook_attempt", extra={"payment_id":str(payment.id)})
-    except Exception as e:
-        logger.error("Error happened when trying to add_webhook_attempt", extra={
+        logger.error("Error when adding payment event", extra={
             "payment_id": str(payment.id),
-            "error_detail":str(e)
-        })
-        raise
-
-def update_webhook_attempt(db_session: Session, payment_id, status_code, response_body):
-    try:
-        db_session.execute(text(
-            """
-            UPDATE webhook_deliveries 
-            SET http_status = :http_status, attempt_no = 1, response_body = :response_body, delivered_at = NOW()
-            WHERE payment_id = (
-                SELECT payment_id FROM webhook_deliveries 
-                WHERE payment_id = :payment_id 
-                FOR UPDATE SKIP LOCKED 
-                LIMIT 1
-            )
-            """),
-            {"payment_id": payment_id, "http_status": status_code, "response_body": response_body}
-        )
-        logger.info("[CRUD] update_webhook_attempt", extra={"payment_id":str(payment_id)})
-    except Exception as e:
-        logger.error("Error happened when trying to update_webhook_attempt", extra={
-            "payment_id": payment_id,
-            "error_detail":str(e)
+            "correlation_id":correlation_id,
+            "error_detail":str(e)[:200]
         })
         raise
