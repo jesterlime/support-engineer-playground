@@ -15,7 +15,6 @@ services:
 
   bank:
     build: ./mock-bank
-    container_name: mock_bank
     environment:
       API_KEY: PROCESSOR-BANK-SECRET
     volumes:
@@ -28,7 +27,6 @@ services:
 
   webhook-sink:
     build: ./webhook-sink
-    container_name: webhook-sink
     volumes:
       - ./webhook-sink/app:/app
       - ./logs:/app/logs
@@ -42,7 +40,6 @@ services:
 
   db:
     image: postgres:16
-    container_name: pay_db
     environment:
       POSTGRES_DB: payments
       POSTGRES_USER: gateway_user
@@ -67,7 +64,6 @@ services:
 
   message-broker:
     image: rabbitmq:alpine
-    container_name: pay_message_broker
     environment: 
       RABBITMQ_DEFAULT_USER: pay_user
       RABBITMQ_DEFAULT_PASS: pay_password
@@ -82,7 +78,6 @@ services:
   
   gateway:
     build: ./gateway
-    container_name: pay_gateway
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -107,7 +102,6 @@ services:
 
   processor:
     build: ./processor
-    container_name: pay_processor
     environment:
       PYTHONUNBUFFERED: "1"
       DB_HOST: db
@@ -136,7 +130,6 @@ services:
 
   notification-service:
     build: ./notification-service
-    container_name: pay_notification_service
     environment:
       PYTHONUNBUFFERED: "1"
       DB_HOST: db
@@ -187,7 +180,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_SERVER_ROOT_URL=http://admin.payment-gateway.local/logs
+      - GF_SERVER_ROOT_URL=http://localhost/logs
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     networks:
       - private
