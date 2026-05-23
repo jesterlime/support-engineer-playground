@@ -1,17 +1,47 @@
+# ============ Settings ============
 {
     auto_https off
+
+    log {
+        output stderr
+        format json
+        level INFO
+    }
 }
 
-# Inbound
+# ============ Inbound (Business Traffic) ============
 api.payment-gateway.local:80 {
+    log {
+        output stderr
+        format json
+    }
+
     reverse_proxy gateway:8000
 }
 
+# ============ Inbound (Admin Traffic) ============
 admin.payment-gateway.local:80 {
-    reverse_proxy db-admin:8080
+    log {
+        output stderr
+        format json
+    }
+
+    handle /logs* {
+        reverse_proxy grafana:3000
+    }
+
+    handle /promtail* {
+        uri strip_prefix /promtail
+        reverse_proxy promtail:9080
+    }
+
+    handle /database* {
+        uri strip_prefix /database
+        reverse_proxy db-admin:8080
+    }
 }
 
-# Oubound
+# ============ Oubound ============
 reverse-proxy:80 {
     handle_path /webhook* {
         reverse_proxy webhook-sink:8080

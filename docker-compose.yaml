@@ -13,11 +13,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
 
-  db-admin:
-    image: adminer:latest
-    networks:
-      - private
-
   bank:
     build: ./mock-bank
     container_name: mock_bank
@@ -60,6 +55,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    command: |
+      postgres
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_duration=on
+      -c log_min_duration_statement=200
+      -c log_line_prefix='%t [%p] [%a] [%u@%d] '
     networks:
       - private
 
@@ -154,6 +156,39 @@ services:
         condition: service_healthy
       message-broker:
         condition: service_healthy
+    networks:
+      - private
+
+  db-admin:
+    image: adminer:latest
+    networks:
+      - private
+
+  loki:
+    image: grafana/loki
+    volumes:
+      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - private
+
+  promtail:
+    image: grafana/promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - private
+
+  grafana:
+    image: grafana/grafana
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SERVER_ROOT_URL=http://admin.payment-gateway.local/logs
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     networks:
       - private
 
