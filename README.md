@@ -1,325 +1,379 @@
-# Support Engineer Playground 🚧
+# Payment Gateway — Support Engineer Playground 🚧
 
-### Fintech Environment:
-This playground utilizes a distributed ***Payment Gateway*** to simulate the high-pressure reality of mission-critical support, where technical errors have direct financial implications. 
+![](./assets/banner-2026-05-24.jpg)
 
-By focusing on fintech, the sandbox reflects a production environment where maintaining system reliability and transaction integrity is essential to protecting the trust and capital of every merchant on the platform.
+A self-contained mock payment processing system running on Docker Compose.
+Built to replicate the operational complexity of a real SaaS payment platform
+at a scale that runs on a laptop.
 
-As a case-based practice environment, the core of this repository is a [series of simulated tickets](#3-ticket-gallery-) that recreates the daily challenges of a Support Engineer. You will navigate real-world scenarios involving complex debugging, fragmented logs, and the high-stakes communication required when resolving issues for frustrated users with limited initial information.
+The system covers a full payment lifecycle: REST intake, async processing
+via message queue, bank communication, and webhook delivery. Services are
+network-isolated into public and private subnets, log structured JSON, and
+ship to a centralized observability stack (Promtail + Loki + Grafana)
+included out of the box.
 
-### Content:
-- [1. Mission 🎯](#1-mission-)
-- [2. Who is this for? 🛠️](#2-who-is-this-for-️)
-- [3. Ticket Gallery 📁](#3-ticket-gallery-)
-- [4. System Architecture 🏛️](#4-system-architecture-️)
-    - [4.1 The Overview](#41-the-overview)
-    - [4.2 The Data Flow](#42-the-data-flow)
-    - [4.3 System Design & Constraints](#43-system-design--constraints)
-    - [4.4 Hardcoded Issues](#44-hardcoded-issues)
-- [5. How to run ▶️](#5-how-to-run-️)
-    - [5.1 Download & Deployment](#51-download--deployment)
-    - [5.2 Make The First Request](#52-make-the-first-request)
-    - [5.3 Chaos Automation](#53-chaos-automation)
-- [6. Development & Contribution 🏗️](#6-development--contribution-️)
+**Upcoming:** injected failure scenarios and incident resolution guides — making
+this a diagnostic playground for engineers who want to practice root-cause
+analysis on a realistic distributed system.
 
-## 1. Mission 🎯
+## Branches
 
-There is an outdated stereotype that technical support is a *"script-reader"* limited to resetting passwords or asking, *"Have you tried to restart your computer?"* In reality, the most valuable experts in the modern SaaS are those who can dive into the system and create a mental map of what they are maintaining. 
+| Branch | Purpose |
+|---|---|
+| `main` | Clean, working system. Up-to-date architecture, actively developed. |
+| `playground` | Same system with injected failures and incident scenarios. Currently based on an earlier architecture — see `main` for the latest. |
 
-Modern technical support is a hybrid role. You aren't just a filter for tickets; you are a multidisciplinary expert who can navigate a codebase, audit the logs, and secure customer loyalty during their most critical moments of frustration. This repository serves as a developing lab for that exact persona.
+New to the project? **Clone `main` first** to understand the system, then switch to `playground` to break it.
 
-## 2. Who is this for? 🛠️
-
-This project is a playground for any roles that require hands-on experience in maintenance of complex systems:</br> `Developers` `SysAdmins` `DevOps` `QA` `Technical Support` `Cybersecurity` `Managers` etc.
-
-You will find yourself dealing with the "uncomfortable" side of software — the stuff that usually happens at Saturday 3:00 AM in production:
-
-- 💾 ***Database Forensics:***</br>
-You will figure out CRUD operations, connection management, transaction integrity, and identifying silent resource leaks that threaten system stability.
-
-- 🏗️ ***Architectural Bottlenecks:*** </br>
-Experience how system design choices behave under pressure. You’ll learn to identify where a single downstream dependency can become a systemic point of failure.
-
-- ⚖️ ***Scaling Challenges:*** </br>
-Explore the transition from a "stable" system to a high-velocity environment. This playground simulates the exact moment when business growth turns minor technical debt into a critical service outage.
-
-- 🌐 ***Globalization & Regional Logic:*** </br>
-Master the nuances of the global market. You’ll tackle the non-obvious complexities of time-zone normalization, data casting, and regional discrepancies that often result in "phantom" data loss for international users.
-
-- 📦 ***Microservice Management:*** </br>
-Learn to navigate the "connective tissue" between services. You will practice tracking a single request across multiple logs and containers, identifying exactly where the communication chain breaks in a distributed architecture.
-
-- 👔 ***High-Stakes Communication:*** </br>
-Practice the art of "Technical Translation." You’ll learn how to take the raw, chaotic data from a system failure and transform it into a professional escalation for developers and a reassuring, empathetic update for stakeholders.
-
-
-## 3. Ticket Gallery 📁
-This is a collection of packed Support Engineer cases — documented investigations into failures that simulate the environment of a Tier 2 Support.
-
-Each ticket report follows a decision chain framework: it begins with the initial ticket or escalation from Tier 1 and follows to the raw log analysis, the database audit, and communication across teams.
-
-Tickets are stored in `tickets/` folder. Here is the list of content:
-
-|Ticket ID|Case Name|Challenge|Link|
-|---|---|---|---|
-|01|State Inconsistency|Client reports that his payment is authorized by bank but stuck at "processing" status in our Payment Gateway dashboard|[Ticket-01-State-Inconsistency.md](./tickets/Ticket-01-State-Inconsistency.md)|
-|02|Resource Exhaustion|Payment Gateway experienced a significant degradation in webhook delivery performance, with delays exceeding 30 minutes|[Ticket-02-Resource-Exhaustion.md](./tickets/Ticket-02-Resource-Exhaustion.md)|
-|03|Timezone Logic|A client based in Sydney reported a discrepancy in daily report. While possessed 25 receipts for the day, the system-generated report only returned 19 records|[Ticket-03-Timezone-Logic.md](./tickets/Ticket-03-Timezone-Logic.md)|
-|04|Database Pool Leak|During rapid scaling Payment Gateway experienced recurring daily service outages, resulting in `Internal Server Error` responses and a total cessation of payment processing during peak hours|[Ticket-04-DB-Pool-Leak.md](./tickets/Ticket-04-DB-Pool-Leak.md)|
-|05|Coming Soon|Coming Soon|Coming Soon|
-
-## 4. System Architecture 🏛️
-
-### 4.1 The Overview
-Project imitates interaction between three (3) parties: Client, Payment Gateway and Bank. Underneath it's five (5) Docker containers. Here's the breakdown on structure:
-
-- 🟡 Client
-    - Insomnia/Postman/cURL: Not a Docker container but logically part of "Client" block that initiates payments.
-    - Webhook Sink: Docker container with simple HTTP listener that logs all incoming requests - simulates webhook URL of a client. This is where the client expects to get a result of a transaction.
-- 🟢 Payment Gateway (implements microservice architecture).
-    - Gateway: Docker container with API that customers interact with. Gateway can create new payments in the Database and check its status.
-    - Processor: Docker container with worker that polls Database and handles the payment authorization through the bank, updates Database and sends a webhook to a client's Webhook Sink.
-    - Database: Docker container with PostgreSQL that contains records about payments, events and webhook delivery.
-- 🟣 Bank: Docker container with simple HTTP server meant to simulate bank API.
-
-### 4.2 The Data Flow:
-
-1. **Entry point:** User sends a POST request to /pay route of Gateway. Request is initiated on host machine and targets Gateway container inside of Docker Compose Stack *(default URL: `http://localhost:8000`)*.
-
-2. **Payment initialization:** Gateway puts the record in a database with information about new payment, thus, creating a "job" for Processor.
-
-3. **Processing:** Processor is an independent background worker that polls database every few seconds looking for new payments. It picks up newly created payment and updates its status from 'created' to 'processing'.
-
-4. **Bank authorisation:** The processor sends a POST request to the bank to authorize the payment and gets a response with bank reference and status. Then it updates the payment record in a database. 
-
-5. **Webhook delivery:** The processor sends a POST request to a webhook URL provided by the customer. No matter what is the response, Processor just puts the record in a webhook-deliveries table and moves on.
-
-- **Logging:** Gateway, Processor and Webhook Sink log their activity to the Container file system. The container folder with logs is synchronized with the `logs/` folder on the host machine via bind mount. It ensures that logs are persistent even if containers are deleted.
-
-This diagram visualizes data flow and relationships between components of a system.</br>
-Blocks inside of Docker Compose Stack are Docker containers. Outside - Host Machine.</br>
-
-
-![img](./assets/diagram.png)
-
-⚠️ IMPORTANT: Database storage is also persistent and mounted to host machine via named volume. For more details, check `docker-compose.yaml`
-
-### 4.3 System Design & Constraints:
-1.  **"Mock" nature of a system**</br>
-Although it is named a Payment Gateway, it **doesn't** reproduce the architecture of real payment gateways and is not meant to follow fintech industry standards. It's only a surface for general production-like challenges that could occur in any system, regardless of the domain. Idea behind it: if we can't make a lesson out of it - we ain't doing it.
-2. **No Auth**</br> 
-There's no authentification implemented between customer and gateway, and authentification between processor and mock bank is done by hardcoded API key.
-3. **No 'users' table**</br> 
-Users are not defined by account, login, password. You can only provide a "customer_id" when sending a request to /pay route, in order to imitate different merchants.
-4. **One-try Processing policy**</br> 
-The processor only tries ONCE to request the bank and ONCE to send the payload to the client's webhook URL. No matter what the reason, he doesn't bother himself with retrying.
-5. **No retry worker**</br> 
-While One-try Processing policy assumes there must be a background worker that polls the database and picks up payments with 'retry' status, and it is not implemented in a system.
-6. **Hardcoded issues**</br>
-Some failure points are pre-designed in different parts of the Payment Gateway itself. It lets you trigger edge cases predictably. Detailed breakdown will be given below.
-
-*IMPORTANT: The project is in early stage. Constraints and System Design is an item for [further changes](#6-development--contribution-️).*
-
-### 4.4 Hardcoded Issues
-Failure trigger mechanics were implemented on the side of third parties: Bank and Webhook Sink. It lets you trigger the specific scenarios simply by tweaking parameters in request `JSON Body`, without hassle of changing variables in code and container restart - right when everything is up and running:
-
-They trigger common scenarios such as: latency, 4XX and 5XX errors. Here's a brief reference for Bank and Webhook Sink services:
-
-#### Bank:
-| Parameter | Value | Code/Result |
-|---|---|---|
-|`amount_minor`|9999|[200] Responce delayed for 1-3s|
-|`amount_minor`|4002|[402] 'Insufficient Funds'|
-|`amount_minor`|5000|[500] 'Internal Server Error'|
-
-#### Webhook Sink:
-| Parameter | Value | Code/Result |
-|---|---|---|
-|`webhook_url`|`http://webhook-sink:8080/success`|[200] Dufault success delivery|
-|`webhook_url`|`http://webhook-sink:8080/client-error`|[400] 'Invalid payload format'|
-|`webhook_url`|`http://webhook-sink:8080/server-error`|[500] 'Internal Server Error'|
-|`webhook_url`|`http://webhook-sink:8080/slow-poke`|[200] Responce delayed for 45s|
-
-## 5. How to run ▶️
-
-* ⚠️ ***Required:*** Docker
-* ☘️ ***Optional:*** Insomia/Postman, pgAdmin
-
-### 5.1 Download & deployment
-
-1. Verify that Docker is installed: `$ docker --version`
-2. Clone the repository: `$ git clone <repository-url>`
-3. Move to the project folder: `$ cd <repository-name>`
-4. Deploy containers: `$ docker compose up -d`
-
-🎉 Congratulations! You've just deployed the whole system. Now you can verify it in your Docker Desktop or check the processes through terminal: `$ docker compose ps`
-
-- ⏸️ STOP containers: `$ docker compose stop`
-- ▶️ START containers: `$ docker compose start` 
-- 🚫 DELETE containers: `$ docker compose down` (deletes the containers)
-- ☢️ DELETE containers and volumes: `$ docker compose down -v` (deletes the containers and database)
-
-Note: if you've shut down containers via `$ docker compose down` and want run them again, you need to deploy them via `$ docker compose up -d`.
-
-### 5.2 Make the first request
-
-Let's send the first payment. Create follwoing request in Insomia or Postman:
-
-<table>
-<tr> <td>  </td> <td>  </td></tr>
-<tr>
-<td>URL</td>
-<td> 
-
-`http://localhost:8000/pay` 
-
-</td>
-</tr>
-<tr>
-<td> JSON Body </td>
-<td>
-
-```json
-{
-  "order_id": "ORD_I179DLGU",
-  "idempotency_key": "d9c0032f-4530-41cd-8966-9707a56ea499",
-  "amount_minor": "19919",
-  "currency": "USD",
-  "description": "Lorem ipsum dolor sit amet",
-  "customer_id": "shop_970438395",
-  "customer_email": "Sharon.Mitchell34@yahoo.com",
-  "payment_token": "token_dd872db3140a",
-  "webhook_url": "http://webhook-sink:8080/success"
-}
-```
-
-</td>
-</tr>
-</table>
-
-Or, if you prefer curl:
 ```bash
-curl --request POST \
-  --url http://localhost:8000/pay \
-  --header 'Content-Type: application/json' \
-  --data '{
-  "order_id": "ORD_I179DLGU",
-  "idempotency_key": "d9c0032f-4530-41cd-8966-9707a56ea499",
-  "amount_minor": 19919,
-  "currency": "USD",
-  "description": "Lorem ipsum dolor sit amet",
-  "customer_id": "shop_970438395",
-  "customer_email": "Sharon.Mitchell34@yahoo.com",
-  "payment_token": "token_dd872db3140a",
-  "webhook_url": "http://webhook-sink:8080/success"
-}'
+# Run the clean system
+git clone https://github.com/jesterlime/support-engineer-playground.git
+cd support-engineer-playground
+docker compose up -d
 ```
 
-If you get a response like this:
-```json
-{
-	"payment_id": "45caaada-ab5d-4628-a9d6-918fee42100c",
-	"correlation_id": "3688ffc1-1264-4db3-a491-17262eabadd0",
-	"status": "created"
-}
+```bash
+# Switch to the diagnostic experience
+git checkout playground
+docker compose up -d
 ```
-🎉 Congratulations! You've sent the payment and it was processed successfully (probably the last time)
 
-### 5.3 Chaos Automation
+## Contents
 
-Sometimes you need to create a volume of hundreds of transactions - to inject a bug or test the system under pressure. To automate the generation of random data you can use a **Pre-Request script**.
+- [1. System Architecture](#1-system-architecture)
+  - [1.1 Overview](#11-overview)
+  - [1.2 Payment Flow](#12-payment-flow)
+  - [1.3 Observability](#13-observability)
+  - [1.4 Design Constraints](#14-design-constraints)
+- [2. API Reference](#2-api-reference)
+- [3. How to Run](#3-how-to-run)
+  - [3.1 Setup](#31-setup)
+  - [3.2 First Payment](#32-first-payment)
+  - [3.3 Load Generation](#33-load-generation)
+- [4. Ticket Gallery](#4-ticket-gallery)
+- [5. Roadmap](#5-roadmap)
 
-This Pre-request script generates unique body for each request automatically, and lets you tweak some inputs in order to trigger scenarios you want, including [Hardcoded Isssues](#44-hardcoded-issues). Here is how to do it in **Insomnia**:
 
-1. Open "Scripts" tab.
-2. Select the "Pre-request" option.
-3. Paste the following code to editor:
-    ```javascript
-    const uuid = require('uuid');
-    const crypto = require('crypto-js');
+## 1. System Architecture
 
-    /* ===== TWEAK PARAMETERS [START] ===== */
+### 1.1 Overview
 
-    const bank_chaos_prob = 1; // 1% probability of chaos on bank side
-    const client_chaos_prob = 1; // 1% probability of chaos on client side
+The system simulates interaction between three parties: a Client, a Payment Gateway, and a Bank. It runs as a Docker Compose stack with two isolated networks that mirror a real VPC setup.
 
-    const chaosRoutes = [
-        "http://webhook-sink:8080/client-error", // 400 ERROR
-        "http://webhook-sink:8080/server-error", // 500 ERROR
-        "http://webhook-sink:8080/slow-poke"     // High Latency (45s)
-    ];
+**Public subnet** — externally reachable:
 
-    const chaosAmounts = [
-        9999, // High Latency (1-3s)
-        4002, // 402 ERROR Insufficiend funds
-        5000, // 500 ERROR Internal Server Error
-        7777  // 200 Malformed Success
-    ];
+| Service | Technology | Role |
+|---|---|---|
+| `reverse-proxy` | Caddy | Reverse proxy, sole entry point for all inbound and outbound traffic |
+| `bank` | FastAPI | Mock bank API |
+| `webhook-sink` | FastAPI | Webhook receiver — logs all incoming webhook deliveries |
 
-    /* ===== TWEAK PARAMETERS [END] ===== */
+**Private subnet** — sits behind Caddy, internal only, not reachable from outside the stack:
 
-    const randomOrderSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const orderId = `ORD_${randomOrderSuffix}`;
-    let amountMinor = Math.floor(Math.random() * 100000) + 100;
-    let customerId = `shop_${Math.floor(Math.random() * 999999999)}`;
-    const paymentToken = `token_${crypto.lib.WordArray.random(6).toString()}`;
-    let webhookUrl = "http://webhook-sink:8080/success";
+| Service | Technology | Role |
+|---|---|---|
+| `gateway` | FastAPI/Uvicorn | Payment API — accepts requests, writes to database, pushes task to queue for processor |
+| `processor` | Python | Consumes events from message queue, handles bank authorization, pushes task to queue for notification service |
+| `notification-service` | Python | Consumes events from message queue, delivers webhook to the client |
+| `db` | PostgreSQL 16 | Persistent records about payments, events, and deliveries |
+| `message-broker` | RabbitMQ | Async message queue between gateway, processor and notification service |
+| `db-admin` | Adminer | Lightweight database UI |
+| `loki` | Grafana Loki | Centralized log storage |
+| `promtail` | Grafana Promtail | Log collector and shipper |
+| `grafana` | Grafana | Log visualization and exploration |
 
-    const roll1 = Math.random();
-    const roll2 = Math.random();
+![Architecture Diagram](./assets/architecture-diagram-2026-05-20.png)
 
-    if (roll1 < client_chaos_prob/100) {
-        webhookUrl = chaosRoutes[Math.floor(Math.random() * chaosRoutes.length)];
-    }
-
-    if (roll2 < bank_chaos_prob/100) {
-        amountMinor = chaosAmounts[Math.floor(Math.random() * chaosAmounts.length)];
-    }
-
-    insomnia.environment.set("dyn_order_id", orderId);
-    insomnia.environment.set("dyn_idempotency", uuid.v4());
-    insomnia.environment.set("dyn_amount", amountMinor);
-    insomnia.environment.set("dyn_customer_id", customerId);
-    insomnia.environment.set("dyn_token", paymentToken);
-    insomnia.environment.set("dyn_webhook", webhookUrl);
-    ```
-
-4. Update the JSON Body:
-    ```json
-    {
-        "order_id": "{{ dyn_order_id }}",
-        "idempotency_key": "{{ dyn_idempotency }}",
-        "amount_minor": "{{ dyn_amount }}",
-        "currency": "USD",
-        "description": "{% faker 'randomLoremSentence' %}",
-        "customer_id": "{{ dyn_customer_id }}",
-        "customer_email": "{% faker 'randomEmail' %}",
-        "payment_token": "{{ dyn_token }}",
-        "webhook_url": "{{ dyn_webhook }}"
-    }
-    ```
-
-**🎉 Congratulations!**</br>
-Now you can generate any volume of traffic with controllably injected flaws. Good luck debugging it 🫡
-
-## 6. Development & Contribution 🏗️
-
-**Current stage:** </br>
-At the moment this is a simplified API with microservice architecture and simulation of third parties.
-
-**Goal:** </br>
-The project aims to provide a near-production experience of working with SaaS. It implies usage of production tools, corresponding architecture and challenges, developed from the perspective of people who keep it alive and are on the frontline of customer communication.
-
-### Roadmap:
-
-|Status|Task|Motivation|Date|
-|------|----|----|---|
-|-|Add a Reverse Proxy|In the current version, the client reaches out our API directly by its port, which is heavy simplification. In production, we don't want to expose the infrastructure, so we hide it behind the Reverse Proxy. It's an entry point for a user and a gatekeeper of backend, also handling routing, caching, and SSL certification.|-|
-|-|Refactor Webhook delivery logic|In the current version, Processor handles both bank request and webhook delivery, which is a temporary solution that may not meet production standards. Instead it's more profitable to delegate the webhook delivery job to separate worker and use message broker like RabbitMQ to feed it with jobs.|-|
-|-|Define a User & Authentification|In the current version the only thing that defines a user is random customer_id in the request body, which is way too abstract. It should be changed by defining a persistent user account in the database, with name, id, API key and some metadata. It will also imply a simple authentication by API key.|-|
-|-|Network Segmentation|In the current version, all containers are deployed under the same network that is fully open to the host. In production we don't want anyone to ping your internal infrastructure, so we segment the network to: public - for reverse proxy, accessed from host; internal - for app layer, only accessed by proxy; isolated - for database and logs, only accessed by app layer. Thus we build a Zero Trust Architecture that is an industrial standard for SaaS.|-|
-|-|Log Aggregation|In current version logs are written to the host machine via bind mount, but in production common practice is Log Aggregation: a system that collects, normalizes and centralizes logs from multiple containers, making them persistent and easier to analyze.|-|
-|-|Log Visualization|Nearly universal component of SaaS as well. Data visualization tools provide user-friendly experience of working with logs: diagrams, charts, dashboards, etc.|-|
-|-|Helpdesk UI|This is a step forward in the educational side of this project. Right now, the system requires you to manually trigger the cases which is necessary for reproduction and understanding of a system. On the other hand, it makes you witness the "cause" of the ticket even before you start resolving it, which eventually kills the element of "surprise".</br></br>Instead, you will be in front of the helpdesks interface, with the ability to play scenarios at single click. Core differences are:</br></br>1. Here you naturally move from symptoms to cause: you don't know what happened unless you carefully read the ticket full of user frustration and walk through the logs and databases to resolve the issue.</br></br>2. Full immersion to the customer communication: you do have a chat with the user that opened the ticket. Although it's gonna be an AI bot underneath, this is what makes it a production-like experience rather than just a hard skill test. It will take all of you: technical literacy, stakeholder translation, customer communication and empathy.|-|
 ---
 
+### 1.2 Payment Flow
+
+This flow map reflects the numbering on the diagram above.
+
+1. **Entry point** — Client sends `POST /pay` to `http://localhost/api`.
+2. **Routing** — Request is routed by Caddy to Gateway and passes validation.
+3. **Payment record** — Gateway writes a payment record to the database with status `created`.
+4. **Processing queue** — Gateway publishes payment metadata to the queue for Processor.
+5. **Processing** — Processor consumes the message, fetches the payment record, updates status to `processing`, and sends an authorization request to the bank.
+6. **Bank response** — Request is routed by Caddy to the Bank, which returns an authorization result.
+7. **Record update** — Processor updates the payment status in the database accordingly.
+8. **Notification queue** — Processor publishes payment metadata to the queue for Notification Service.
+9. **Webhook delivery** — Notification Service consumes the message and delivers the webhook to the client's URL.
+10. **Delivery response** — Request is routed by Caddy to the client's webhook server, which returns a response.
+11. **Delivery record** — Result of the delivery attempt is recorded in the database.
+
+---
+
+### 1.3 Observability
+
+#### 1.3.1 Log monitoring via Grafana
+
+All services emit structured JSON logs to stdout. Docker captures these and Promtail ships them to Loki with a purposeful label hierarchy:
+
+| Label | Values | Purpose |
+|---|---|---|
+| `category` | `business`, `infra`, `data`, `monitoring` | Group queries by system layer |
+| `service` | `gateway`, `processor`, `notification-service`, etc. | Filter by individual service |
+| `container_name` | exact container name | Pinpoint specific instance |
+
+</br>
+
+Categories (system layers) according to `category` label
+
+| Category | Services | Description |
+|---|---|---|
+| `business` | `gateway` `processor` `notification-service` | Payment flow business logic |
+| `infra` | `reverse-proxy` | Network layer — all inbound and outbound traffic |
+| `data` | `db` `message-broker` | Persistent storage and messaging |
+| `monitoring` | `grafana` `loki` `promtail` `adminer` | Observability and database administration |
+
+**Grafana** is available at [`http://localhost/logs`](http://localhost/logs)
+
+Useful LogQL queries to get started:
+
+```logql
+# Follow a specific payment across all services
+{category="business"} | json | payment_id="<id>" correlation_id="<id>"
+
+# All errors across business logic
+{category="business", level="error"}
+
+# Caddy access log + business logic together
+{category=~"business|infra"} | json
+```
+
+#### 1.3.2 Database administration with Adminer
+
+**Adminer** is available at [`http://localhost/database`](http://localhost/database)
+
+A lightweight database UI for inspecting PostgreSQL directly — useful for
+verifying payment records, auditing table state, and cross-referencing what
+the logs say against what actually landed in the database.
+
+**Login credentials:**
+
+| Field | Value |
+|---|---|
+| System | PostgreSQL |
+| Host/Server | `db` |
+| Username | `gateway_user` |
+| Password | `gateway_pass` |
+| Database | `payments` |
+
+The `payments` database contains three tables:
+
+| Table | Contents |
+|---|---|
+| `payments` | Every payment record with status, amount, bank reference, and timestamps |
+| `payment_events` | Status transition log — tracks every state change a payment goes through |
+| `webhook_deliveries` | Webhook delivery attempts with response codes and timestamps |
+
+A typical investigation flow: spot an anomaly in Grafana logs, grab the
+`payment_id`, then query Adminer to see the exact database state at that
+moment — whether the record exists, what status it landed on, and whether
+the webhook delivery was attempted.
+
+---
+
+### 1.4 Design Constraints
+
+This system deliberately simplifies some aspects of a real payment gateway. These are known constraints, not gaps:
+
+1. **Mock architecture** — Does not reproduce fintech industry standards or compliance requirements. The domain exists to provide realistic operational scenarios, not to model a real payment processor.
+
+2. **No authentication** — No customer authentication between client and gateway. Bank authentication is a hardcoded API key.
+
+3. **No user accounts** — Merchants are identified by a `customer_id` field in the request body only.
+
+4. **Single-attempt processing** — Processor makes one attempt at bank authorization and one attempt at webhook delivery. No retry logic is implemented.
+
+5. **Hardcoded failure triggers** — Bank and Webhook Sink respond to specific input values with predictable failures, enabling controlled scenario reproduction without code changes:
+
+**Bank triggers:**
+
+| `amount_minor` | Result |
+|---|---|
+| `9999` | `[200]` Response delayed 1–3s |
+| `4002` | `[402]` Insufficient funds |
+| `5000` | `[500]` Internal server error |
+
+**Webhook Sink routes:**
+
+| `webhook_url` | Result |
+|---|---|
+| `.../success` | `[200]` Default success |
+| `.../client-error` | `[400]` Invalid payload |
+| `.../server-error` | `[500]` Internal server error |
+| `.../slow-poke` | `[200]` Response delayed 45s |
+
+> Some constraints are temporary and will be addressed as the project evolves. See [Roadmap](#5-roadmap).
+
+---
+
+## 2. API Reference
+
+Gateway API reference → [`gateway/API_REFERENCE.md`](./gateway/API_REFERENCE.md)
+
+## 3. How to Run
+
+**Required:** Docker  
+**Optional:** Insomnia / Postman
+
+### 3.1 Setup
+
+```bash
+# Verify Docker is installed
+docker --version
+
+# Clone and enter the repository
+git clone https://github.com/jesterlime/support-engineer-playground.git
+cd support-engineer-playground
+
+# Start the stack
+docker compose up -d
+
+# Verify all containers are running
+docker compose ps
+```
+
+**Useful commands:**
+
+```bash
+docker compose stop        # pause containers, preserve state
+docker compose start       # resume paused containers
+docker compose down        # remove containers
+docker compose down -v     # remove containers and wipe database
+```
+
+> After `docker compose down`, containers are deleted — use `docker compose up -d` to recreate them, not `start`.
+
+---
+
+### 3.2 First Payment
+
+Send a `POST` request to `http://localhost/api/pay`:
+
+```bash
+curl --request POST \
+  --url http://localhost/api/pay \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "order_id": "ORD_I179DLGU",
+    "idempotency_key": "d9c0032f-4530-41cd-8966-9707a56ea499",
+    "amount_minor": 19919,
+    "currency": "USD",
+    "description": "Lorem ipsum dolor sit amet",
+    "customer_id": "shop_970438395",
+    "customer_email": "Sharon.Mitchell34@yahoo.com",
+    "payment_token": "token_dd872db3140a",
+    "webhook_url": "http://reverse-proxy/webhook/success"
+  }'
+```
+
+Expected response:
+
+```json
+{
+  "payment_id": "45caaada-ab5d-4628-a9d6-918fee42100c",
+  "correlation_id": "3688ffc1-1264-4db3-a491-17262eabadd0",
+  "status": "created"
+}
+```
+
+Then follow the payment through Grafana at [`http://localhost/logs`](http://localhost/logs) using the returned `payment_id` and `correlation_id`.
+
+---
+
+### 3.3 Load Generation
+
+For volume testing or failure scenario reproduction, use this Pre-request script in Insomnia:
+
+1. Open the **Scripts** tab → select **Pre-request**
+2. Paste the script below
+3. Update the JSON body to use the dynamic variables
+
+```javascript
+const uuid = require('uuid');
+const crypto = require('crypto-js');
+
+/* ===== TWEAK PARAMETERS ===== */
+const bank_chaos_prob = 1;   // % chance of bank failure
+const client_chaos_prob = 1; // % chance of webhook failure
+
+const chaosRoutes = [
+    "http://reverse-proxy/webhook/client-error",
+    "http://reverse-proxy/webhook/server-error",
+    "http://reverse-proxy/webhook/slow-poke"
+];
+
+const chaosAmounts = [9999, 4002, 5000];
+/* ============================ */
+
+const randomOrderSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
+const orderId = `ORD_${randomOrderSuffix}`;
+let amountMinor = Math.floor(Math.random() * 100000) + 100;
+let customerId = `shop_${Math.floor(Math.random() * 999999999)}`;
+const paymentToken = `token_${crypto.lib.WordArray.random(6).toString()}`;
+let webhookUrl = "http://reverse-proxy/webhook/success";
+
+if (Math.random() < client_chaos_prob / 100)
+    webhookUrl = chaosRoutes[Math.floor(Math.random() * chaosRoutes.length)];
+
+if (Math.random() < bank_chaos_prob / 100)
+    amountMinor = chaosAmounts[Math.floor(Math.random() * chaosAmounts.length)];
+
+insomnia.environment.set("dyn_order_id", orderId);
+insomnia.environment.set("dyn_idempotency", uuid.v4());
+insomnia.environment.set("dyn_amount", amountMinor);
+insomnia.environment.set("dyn_customer_id", customerId);
+insomnia.environment.set("dyn_token", paymentToken);
+insomnia.environment.set("dyn_webhook", webhookUrl);
+```
+
+JSON body:
+
+```json
+{
+  "order_id": "{{ dyn_order_id }}",
+  "idempotency_key": "{{ dyn_idempotency }}",
+  "amount_minor": "{{ dyn_amount }}",
+  "currency": "USD",
+  "description": "{% faker 'randomLoremSentence' %}",
+  "customer_id": "{{ dyn_customer_id }}",
+  "customer_email": "{% faker 'randomEmail' %}",
+  "payment_token": "{{ dyn_token }}",
+  "webhook_url": "{{ dyn_webhook }}"
+}
+```
+
+
+## 4. Ticket Gallery
+
+> **Looking for the plug-and-play diagnostic experience?**
+> The fully packed version with working incident scenarios lives on the
+> [`playground` branch](../../tree/playground). It runs on a simpler architecture purpose-built
+> for that experience — spin it up and start investigating immediately:
+
+```bash
+# Switch to the diagnostic experience
+git checkout playground
+docker compose up -d
+```
+
+The current architecture is being redesigned for a richer set of scenarios.
+New tickets are planned once the infrastructure stabilizes. Track progress
+in the [Roadmap](#4-roadmap).
+
+
+## 5. Roadmap
+
+| Status | Item |
+|---|---|
+| ✅ | Segment the network to Public and Private |
+| ✅ | Add a Reverse-Proxy (Caddy) |
+| ✅ | Refactor business logic to use RabbitMQ (Gateway -> Processor -> Notification Service pipeline) |
+| ✅ | Setup the observability stack (Promtail + Loki + Grafana) |
+| 🔲 | Pre-built Grafana dashboards (system overview, payment flow, error rates) |
+| 🔲 | Define user accounts and implement API key authentication |
+| 🔲 | Injected failure scenarios for updated architecture |
+| 🔲 | Helpdesk UI with AI-powered customer communication simulation |
