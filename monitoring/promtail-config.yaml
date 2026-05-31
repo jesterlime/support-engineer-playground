@@ -14,7 +14,7 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: label
-            values: ["com.docker.compose.project=paymentgateway"]
+            values: ["com.docker.compose.project=support-engineer-playground"]
     relabel_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         regex: "^(gateway|processor|notification-service)$"
@@ -41,7 +41,7 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: label
-            values: ["com.docker.compose.project=paymentgateway"]
+            values: ["com.docker.compose.project=support-engineer-playground"]
     relabel_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         regex: "(reverse-proxy)"
@@ -68,7 +68,7 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: label
-            values: ["com.docker.compose.project=paymentgateway"]
+            values: ["com.docker.compose.project=support-engineer-playground"]
     relabel_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         regex: "^(db|message-broker)$"
@@ -95,7 +95,7 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: label
-            values: ["com.docker.compose.project=paymentgateway"]
+            values: ["com.docker.compose.project=support-engineer-playground"]
     relabel_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         regex: "^(loki|promtail|grafana|db-admin)$"
